@@ -1,49 +1,45 @@
 # ESSENCE NETWORK — PROJECT DOCUMENT
-## Version 2.1 — HLS + Browser Admin Dashboard
+## Version 3.0 — Production CMS + API Foundation
 Date: 3 September 2026
 
-### Current milestone
-Essence Network v2.1 adds a browser-based content management dashboard to the HLS web TV foundation.
+### Objective
+Move Essence Network from a browser-only prototype to a shared, server-backed digital TV platform.
 
-### Completed
-- Responsive digital TV website
-- HLS live player with hls.js + native HLS fallback
-- Channel switching and reconnect
-- Four demo channel slots
-- TV Guide
-- VOD
-- News
-- Search
-- Admin dashboard
-- Add/edit/delete channels
-- Add/edit/delete TV Guide programmes
-- Add/edit/delete videos
-- Add/edit/delete news stories
-- HLS URL management
-- Reset demo content
-- Browser localStorage persistence
-- Correct lowercase `css/` and `js/` project paths
+### V3 completed
+- Node.js/Express API
+- SQLite database schema
+- JWT-authenticated admin dashboard
+- Channels CRUD with HLS URLs
+- Programme/EPG CRUD
+- VOD CRUD
+- News CRUD
+- Upload endpoint foundation
+- Public content API
+- Health endpoint
+- Environment configuration
+- Public responsive website
+- HLS playback using hls.js with native fallback
 
-### Admin dashboard location
-Open the public website and tap **ADMIN**.
+### Architecture
+Browser → Express API → SQLite
+Browser → HLS CDN/origin for live video
+Admin → JWT login → protected CRUD API
 
-### Important limitation
-This admin dashboard is a prototype. It stores content in the browser's localStorage and does NOT provide secure multi-user authentication or a shared database. Changes made on one browser/device do not automatically appear on another device.
+### Deployment model
+GitHub stores source code. GitHub Pages may host the static frontend, but the API/database require a Node-capable backend. For the simplest V3 deployment, deploy the complete repository to a Node hosting service. For a split deployment, host `/public` separately and configure an API base URL.
 
-### V3 production CMS
-Next we should replace localStorage with:
-- authenticated admin accounts
-- database/API
-- image/file storage
-- shared channel configuration
-- real EPG API
-- VOD storage
-- stream health monitoring
-- role-based permissions
-- audit log
-
-### Streaming
-The included HLS URL is a public demonstration stream for testing. Replace it with an Essence-owned/licensed `.m3u8` stream before public broadcasting.
+### Production hardening still required
+- Argon2/bcrypt password hashing instead of the prototype SHA-256 helper
+- Rate limiting and login protection
+- HTTPS
+- Strict CORS
+- Database backups
+- Audit logs
+- Role-based permissions
+- CDN/media storage
+- Real EPG scheduling rules/time zones
+- Stream health monitoring
+- Automated deployments
 
 ### Roadmap
-V2.1 Admin dashboard -> V3 Production CMS + streaming backend -> V4 Android APK -> V5 Android TV/Google TV -> V6 full OTT platform.
+V1 UI → V2 HLS → V2.1 browser CMS → **V3 shared production CMS foundation** → V4 Android APK → V5 Android TV/Google TV → V6 OTT platform.
