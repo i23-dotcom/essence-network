@@ -1,70 +1,45 @@
-const CONFIG={
-  // Replace this demo URL with your licensed Essence Network .m3u8 stream.
-  // HLS playback uses hls.js where Media Source Extensions are available,
-  // with native HLS fallback on supported devices.
-  defaultStream:"https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-};
+const DEFAULT={channels:[
+{id:"main",name:"Essence TV",desc:"Flagship channel",stream:"https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"},
+{id:"news",name:"Essence News",desc:"News & current affairs",stream:"https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"},
+{id:"music",name:"Essence Music",desc:"Music & live sessions",stream:"https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"},
+{id:"kids",name:"Essence Kids",desc:"Kids & family",stream:"https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"}],
+schedule:[["06:00","08:00","Sunrise Uganda","News, weather and the stories starting your day."],["08:00","10:00","Essence Morning","News, entertainment and conversation."],["10:00","11:00","Midday News","Headlines and live updates from Uganda and Africa."],["11:00","13:00","Essence Lifestyle","Food, culture, business and inspiring people."],["13:00","14:00","Africa Today","Stories and perspectives from across the continent."],["14:00","16:00","Essence Music","Music videos and live sessions."],["16:00","18:00","Youth Connect","Technology, careers and youth culture."],["18:00","19:00","Essence News","Your evening news bulletin."],["19:00","20:00","Prime Talk","Conversations that matter."],["20:00","22:00","Essence Movies","Premium evening entertainment."]],
+videos:[["▶","Essence Morning Highlights","The best moments from the morning show."],["♪","Essence Live Session","Fresh music and performances."],["▶","Inside Kampala","People, places and stories around the city."],["★","Africa Now","Conversations shaping the continent."]],
+news:[["TOP STORY","Uganda's creative economy enters a new digital era","Creators, broadcasters and streaming are changing African media."],["BUSINESS","The future of African television","Why digital-first networks can reach audiences beyond traditional broadcast."],["CULTURE","Stories from home","Local stories, music and culture remain at the heart of entertainment."],["TECH","Streaming comes to the living room","Smart TVs and mobile devices are changing television."]]};
 
-const channels=[
- {id:"main",name:"Essence TV",desc:"Flagship channel",stream:CONFIG.defaultStream},
- {id:"news",name:"Essence News",desc:"News & current affairs",stream:CONFIG.defaultStream},
- {id:"music",name:"Essence Music",desc:"Music & live sessions",stream:CONFIG.defaultStream},
- {id:"kids",name:"Essence Kids",desc:"Kids & family",stream:CONFIG.defaultStream}
-];
-const schedule=[
-["06:00","08:00","Sunrise Uganda","News, weather and the stories starting your day."],
-["08:00","10:00","Essence Morning","News, entertainment and conversation."],
-["10:00","11:00","Midday News","Headlines and live updates from Uganda and Africa."],
-["11:00","13:00","Essence Lifestyle","Food, culture, business and inspiring people."],
-["13:00","14:00","Africa Today","Stories and perspectives from across the continent."],
-["14:00","16:00","Essence Music","Music videos and live sessions."],
-["16:00","18:00","Youth Connect","Technology, careers and youth culture."],
-["18:00","19:00","Essence News","Your evening news bulletin."],
-["19:00","20:00","Prime Talk","Conversations that matter."],
-["20:00","22:00","Essence Movies","Premium evening entertainment."]
-];
-const videos=[["▶","Essence Morning Highlights","The best moments from the morning show."],["♪","Essence Live Session","Fresh music and performances."],["▶","Inside Kampala","People, places and stories around the city."],["★","Africa Now","Conversations shaping the continent."]];
-const news=[["TOP STORY","Uganda's creative economy enters a new digital era","Creators, broadcasters and streaming are changing African media."],["BUSINESS","The future of African television","Why digital-first networks can reach audiences beyond traditional broadcast."],["CULTURE","Stories from home","Local stories, music and culture remain at the heart of entertainment."],["TECH","Streaming comes to the living room","Smart TVs and mobile devices are changing television."]];
-
+let data=JSON.parse(localStorage.getItem("essenceCMS")||"null")||structuredClone(DEFAULT);
 let hls=null,current=null;
+function save(){localStorage.setItem("essenceCMS",JSON.stringify(data))}
+function renderChannels(target){document.querySelector(target).innerHTML=data.channels.map(c=>`<article class="channel" data-channel="${c.id}"><div class="logo">${c.name.toUpperCase()}</div><strong>${c.name}</strong><small>${c.desc}</small></article>`).join("")}
+function renderGuide(){document.querySelector("#guide").innerHTML=data.schedule.map((s,i)=>`<div class="guide-row"><time>${s[0]}<br>—<br>${s[1]}</time><div><b>${s[2]}</b><p>${s[3]}</p></div>${i===1?'<span class="on">ON AIR</span>':''}</div>`).join("")}
+function renderVideos(){document.querySelector("#videos").innerHTML=data.videos.map(v=>`<article class="video"><div class="thumb">${v[0]}</div><div><b>${v[1]}</b><p>${v[2]}</p></div></article>`).join("")}
+function renderNews(){document.querySelector("#news").innerHTML=data.news.map(n=>`<article class="news"><span class="tag">${n[0]}</span><h2>${n[1]}</h2><p>${n[2]}</p></article>`).join("")}
+function refresh(){save();renderChannels("#channels");renderChannels("#liveChannels");renderGuide();renderVideos();renderNews();if(current)loadChannel(current.id)}
+function showView(v){document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));document.querySelector("#"+v+"View").classList.add("active");document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view===v));if(v==="admin")renderAdmin("channels");scrollTo(0,0)}
+document.addEventListener("click",e=>{const nav=e.target.closest("[data-view]");if(nav){e.preventDefault();showView(nav.dataset.view);return}const ch=e.target.closest("[data-channel]");if(ch){showView("live");loadChannel(ch.dataset.channel)}});
 
-function renderChannels(target){document.querySelector(target).innerHTML=channels.map(c=>`<article class="channel" data-channel="${c.id}"><div class="logo">${c.name.toUpperCase()}</div><strong>${c.name}</strong><small>${c.desc}</small></article>`).join("")}
-function renderGuide(){document.querySelector("#guide").innerHTML=schedule.map((s,i)=>`<div class="guide-row"><time>${s[0]}<br>—<br>${s[1]}</time><div><b>${s[2]}</b><p>${s[3]}</p></div>${i===1?'<span class="on">ON AIR</span>':''}</div>`).join("")}
-function renderVideos(){document.querySelector("#videos").innerHTML=videos.map(v=>`<article class="video"><div class="thumb">${v[0]}</div><div><b>${v[1]}</b><p>${v[2]}</p></div></article>`).join("")}
-function renderNews(){document.querySelector("#news").innerHTML=news.map(n=>`<article class="news"><span class="tag">${n[0]}</span><h2>${n[1]}</h2><p>${n[2]}</p></article>`).join("")}
-
-function showView(v){document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));document.querySelector("#"+v+"View").classList.add("active");document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view===v));scrollTo(0,0)}
-document.addEventListener("click",e=>{
- const nav=e.target.closest("[data-view]"); if(nav){e.preventDefault();showView(nav.dataset.view);return}
- const ch=e.target.closest("[data-channel]"); if(ch){showView("live");loadChannel(ch.dataset.channel)}
-});
-
-function setMessage(title,sub){document.querySelector("#playerMessage strong").textContent=title;document.querySelector("#playerMessage span").textContent=sub}
-function stopHls(){if(hls){hls.destroy();hls=null}}
-function loadChannel(id){
- const c=channels.find(x=>x.id===id)||channels[0]; current=c;
- const video=document.querySelector("#player"); stopHls(); video.removeAttribute("src"); video.load();
- document.querySelector("#nowTitle").textContent=c.name;document.querySelector("#nowDesc").textContent=c.desc;
- document.querySelector("#streamState").textContent="CONNECTING";document.querySelector("#buffering").style.display="block";setMessage(c.name,"Connecting to live HLS stream…");
- if(Hls.isSupported()){
-   hls=new Hls({enableWorker:true,lowLatencyMode:true,maxBufferLength:30});
-   hls.loadSource(c.stream);hls.attachMedia(video);
-   hls.on(Hls.Events.MANIFEST_PARSED,()=>{document.querySelector("#streamState").textContent="LIVE";document.querySelector("#buffering").style.display="none";setMessage(c.name,"Live stream ready");video.play().catch(()=>{})});
-   hls.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){document.querySelector("#streamState").textContent="ERROR";document.querySelector("#buffering").style.display="none";setMessage("STREAM ERROR","Check the HLS URL, CORS and server availability.")}});
- }else if(video.canPlayType("application/vnd.apple.mpegurl")){
-   video.src=c.stream;video.addEventListener("loadedmetadata",()=>{document.querySelector("#streamState").textContent="LIVE";document.querySelector("#buffering").style.display="none";video.play().catch(()=>{})},{once:true});
- }else{
-   document.querySelector("#streamState").textContent="UNSUPPORTED";document.querySelector("#buffering").style.display="none";setMessage("HLS NOT SUPPORTED","Try a modern browser or supported TV device.");
- }
-}
+function loadChannel(id){const c=data.channels.find(x=>x.id===id)||data.channels[0];current=c;const video=document.querySelector("#player");if(hls){hls.destroy();hls=null}video.removeAttribute("src");video.load();document.querySelector("#nowTitle").textContent=c.name;document.querySelector("#nowDesc").textContent=c.desc;document.querySelector("#streamState").textContent="CONNECTING";document.querySelector("#buffering").style.display="block";document.querySelector("#playerMessage span").textContent="Connecting to live HLS stream…";if(Hls.isSupported()){hls=new Hls({enableWorker:true,lowLatencyMode:true,maxBufferLength:30});hls.loadSource(c.stream);hls.attachMedia(video);hls.on(Hls.Events.MANIFEST_PARSED,()=>{document.querySelector("#streamState").textContent="LIVE";document.querySelector("#buffering").style.display="none";video.play().catch(()=>{})});hls.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal){document.querySelector("#streamState").textContent="ERROR";document.querySelector("#buffering").style.display="none";document.querySelector("#playerMessage span").textContent="Check HLS URL, CORS and server availability."}})}else if(video.canPlayType("application/vnd.apple.mpegurl")){video.src=c.stream;video.addEventListener("loadedmetadata",()=>{document.querySelector("#streamState").textContent="LIVE";document.querySelector("#buffering").style.display="none";video.play().catch(()=>{})},{once:true})}}
 document.querySelector("#reloadStream").onclick=()=>loadChannel(current?.id||"main");
 
-const hv=document.querySelector("#heroVideo");
-if(Hls.isSupported()){const hh=new Hls();hh.loadSource(CONFIG.defaultStream);hh.attachMedia(hv);hh.on(Hls.Events.MANIFEST_PARSED,()=>{document.querySelector("#heroStatus").textContent="LIVE";hv.play().catch(()=>{})})}
-else if(hv.canPlayType("application/vnd.apple.mpegurl")){hv.src=CONFIG.defaultStream;hv.addEventListener("loadedmetadata",()=>hv.play().catch(()=>{}),{once:true})}
+function renderAdmin(tab){document.querySelectorAll(".atab").forEach(b=>b.classList.toggle("active",b.dataset.admin===tab));let box=document.querySelector("#adminContent");
+if(tab==="settings"){box.innerHTML=`<div class="admin-card"><h2>Settings</h2><p class="notice">This browser-only CMS stores data in localStorage. It is a prototype, not a secure production CMS.</p><div class="form"><label>Demo/default HLS URL</label><input id="defaultHls" value="${data.channels[0]?.stream||""}"><div class="form-actions"><button class="primary" id="applyHls">Apply to all channels</button><button class="secondary" id="resetCMS">Reset demo content</button></div></div></div>`;document.querySelector("#applyHls").onclick=()=>{let u=document.querySelector("#defaultHls").value.trim();if(!u)return;data.channels=data.channels.map(c=>({...c,stream:u}));refresh();renderAdmin("settings")};document.querySelector("#resetCMS").onclick=()=>{if(confirm("Reset all CMS content?")){data=structuredClone(DEFAULT);refresh();renderAdmin("settings")}};return}
+let title={channels:"Channels",guide:"TV Guide",videos:"Videos",news:"News"}[tab];
+let rows=tab==="channels"?data.channels.map((x,i)=>`<tr><td>${x.name}</td><td>${x.desc}<br><small>${x.stream}</small></td><td><button class="secondary edit" data-type="channels" data-i="${i}">Edit</button> <button class="secondary danger del" data-type="channels" data-i="${i}">Delete</button></td></tr>`):
+tab==="guide"?data.schedule.map((x,i)=>`<tr><td>${x[0]}–${x[1]}</td><td>${x[2]}<br><small>${x[3]}</small></td><td><button class="secondary edit" data-type="guide" data-i="${i}">Edit</button> <button class="secondary danger del" data-type="guide" data-i="${i}">Delete</button></td></tr>`):
+tab==="videos"?data.videos.map((x,i)=>`<tr><td>${x[0]}</td><td>${x[1]}<br><small>${x[2]}</small></td><td><button class="secondary edit" data-type="videos" data-i="${i}">Edit</button> <button class="secondary danger del" data-type="videos" data-i="${i}">Delete</button></td></tr>`):
+data.news.map((x,i)=>`<tr><td>${x[0]}</td><td>${x[1]}<br><small>${x[2]}</small></td><td><button class="secondary edit" data-type="news" data-i="${i}">Edit</button> <button class="secondary danger del" data-type="news" data-i="${i}">Delete</button></td></tr>`);
+box.innerHTML=`<div class="admin-card"><h2>${title}</h2><button class="primary" id="addItem">+ Add ${title.slice(0,-1)}</button></div><div class="admin-card"><table class="admin-table"><thead><tr><th>Info</th><th>Details</th><th>Actions</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">No content yet.</td></tr>'}</tbody></table></div>`;
+document.querySelector("#addItem").onclick=()=>editItem(tab,-1);box.querySelectorAll(".edit").forEach(b=>b.onclick=()=>editItem(b.dataset.type,+b.dataset.i));box.querySelectorAll(".del").forEach(b=>b.onclick=()=>{if(confirm("Delete this item?")){data[b.dataset.type==="guide"?"schedule":b.dataset.type].splice(+b.dataset.i,1);refresh();renderAdmin(tab)}})}
+document.addEventListener("click",e=>{const t=e.target.closest(".atab");if(t)renderAdmin(t.dataset.admin)});
+function editItem(type,i){let arr=type==="guide"?"schedule":type, x=i<0?null:data[arr][i], box=document.querySelector("#adminContent");let html="";
+if(type==="channels")html=`<div class="admin-card"><h2>${i<0?"Add":"Edit"} Channel</h2><div class="form"><label>Name</label><input id="f1" value="${x?.name||""}"><label>Description</label><input id="f2" value="${x?.desc||""}"><label>HLS .m3u8 URL</label><input id="f3" value="${x?.stream||""}"><div class="form-actions"><button class="primary" id="saveItem">Save</button><button class="secondary" id="cancelItem">Cancel</button></div></div></div>`;
+if(type==="guide")html=`<div class="admin-card"><h2>${i<0?"Add":"Edit"} Programme</h2><div class="form"><label>Start</label><input id="f1" value="${x?.[0]||""}" placeholder="08:00"><label>End</label><input id="f2" value="${x?.[1]||""}" placeholder="10:00"><label>Title</label><input id="f3" value="${x?.[2]||""}"><label>Description</label><textarea id="f4">${x?.[3]||""}</textarea><div class="form-actions"><button class="primary" id="saveItem">Save</button><button class="secondary" id="cancelItem">Cancel</button></div></div></div>`;
+if(type==="videos")html=`<div class="admin-card"><h2>${i<0?"Add":"Edit"} Video</h2><div class="form"><label>Icon</label><input id="f1" value="${x?.[0]||"▶"}"><label>Title</label><input id="f2" value="${x?.[1]||""}"><label>Description</label><textarea id="f3">${x?.[2]||""}</textarea><div class="form-actions"><button class="primary" id="saveItem">Save</button><button class="secondary" id="cancelItem">Cancel</button></div></div></div>`;
+if(type==="news")html=`<div class="admin-card"><h2>${i<0?"Add":"Edit"} Story</h2><div class="form"><label>Category</label><input id="f1" value="${x?.[0]||""}"><label>Headline</label><input id="f2" value="${x?.[1]||""}"><label>Summary</label><textarea id="f3">${x?.[2]||""}</textarea><div class="form-actions"><button class="primary" id="saveItem">Save</button><button class="secondary" id="cancelItem">Cancel</button></div></div></div>`;
+box.innerHTML=html;document.querySelector("#cancelItem").onclick=()=>renderAdmin(type);document.querySelector("#saveItem").onclick=()=>{let v;if(type==="channels")v={id:i<0?Date.now().toString():x.id,name:f1.value.trim(),desc:f2.value.trim(),stream:f3.value.trim()};else if(type==="guide")v=[f1.value.trim(),f2.value.trim(),f3.value.trim(),f4.value.trim()];else if(type==="videos")v=[f1.value.trim(),f2.value.trim(),f3.value.trim()];else v=[f1.value.trim(),f2.value.trim(),f3.value.trim()];if(i<0)data[arr].push(v);else data[arr][i]=v;refresh();renderAdmin(type)}}
 
-document.querySelector("#searchBtn").onclick=()=>{document.querySelector("#searchPanel").classList.add("open");document.querySelector("#searchInput").focus()};
-document.querySelector("#closeSearch").onclick=()=>document.querySelector("#searchPanel").classList.remove("open");
-document.querySelector("#searchInput").oninput=e=>{let q=e.target.value.toLowerCase().trim();let all=[...channels.map(c=>[c.name,c.desc]),...schedule.map(s=>[s[2],s[3]]),...news.map(n=>[n[1],n[2]])];let r=all.filter(x=>(x[0]+" "+x[1]).toLowerCase().includes(q));document.querySelector("#results").innerHTML=q?r.map(x=>`<div class="result"><b>${x[0]}</b><small>${x[1]}</small></div>`).join(""):""};
+document.querySelector("#searchBtn").onclick=()=>{document.querySelector("#searchPanel").classList.add("open");document.querySelector("#searchInput").focus()};document.querySelector("#closeSearch").onclick=()=>document.querySelector("#searchPanel").classList.remove("open");
+document.querySelector("#searchInput").oninput=e=>{let q=e.target.value.toLowerCase().trim(),all=[...data.channels.map(c=>[c.name,c.desc]),...data.schedule.map(s=>[s[2],s[3]]),...data.news.map(n=>[n[1],n[2]])];document.querySelector("#results").innerHTML=q?all.filter(x=>(x[0]+" "+x[1]).toLowerCase().includes(q)).map(x=>`<div class="result"><b>${x[0]}</b><small>${x[1]}</small></div>`).join(""):""};
 
 renderChannels("#channels");renderChannels("#liveChannels");renderGuide();renderVideos();renderNews();loadChannel("main");
+const hv=document.querySelector("#heroVideo");if(Hls.isSupported()){const hh=new Hls();hh.loadSource(data.channels[0].stream);hh.attachMedia(hv);hh.on(Hls.Events.MANIFEST_PARSED,()=>{document.querySelector("#heroStatus").textContent="LIVE";hv.play().catch(()=>{})})}else if(hv.canPlayType("application/vnd.apple.mpegurl")){hv.src=data.channels[0].stream;hv.addEventListener("loadedmetadata",()=>hv.play().catch(()=>{}),{once:true})}
