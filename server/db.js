@@ -1,14 +1,6 @@
-const path = require("path");
 const fs = require("fs");
-const Database = require("better-sqlite3");
+const path = require("path");
 
-const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
+const DATA_DIR = path.join(__dirname, "../data");
 
-// Make sure the directory exists
-fs.mkdirSync(dataDir, { recursive: true });
-
-const dbPath = path.join(dataDir, "essence.db");
-
-const db = new Database(dbPath);
-
-module.exports = db;
+fs.mkdirSync(DATA_DIR, { recursive: true });
