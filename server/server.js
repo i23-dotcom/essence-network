@@ -6,23 +6,25 @@ const fs=require('fs');
 const multer=require('multer');
 const db=require('./db');
 require('./v5-migrations');
-const {hashPassword,sign,requireAuth}=require('./auth');
+const {hashPassword,verifyPassword,needsRehash,sign,requireAuth}=require('./auth');
 if(!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required');
 function bootstrapAdmin(){const email=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase();const password=String(process.env.ADMIN_PASSWORD||'');if(!email||!password){console.warn('ADMIN_EMAIL/ADMIN_PASSWORD not set; no administrator was bootstrapped.');return;}const u=db.prepare('SELECT id,role FROM users WHERE email=?').get(email);if(u){if(u.role!=='admin')db.prepare('UPDATE users SET role=? WHERE id=?').run('admin',u.id);return;}db.prepare('INSERT INTO users(email,password_hash,role) VALUES(?,?,?)').run(email,hashPassword(password),'admin');console.log(`Admin account ready: ${email}`)}
 bootstrapAdmin();
 const app=express();
-app.use(cors({origin:process.env.CORS_ORIGIN||true}));
+app.use(cors({origin:process.env.CORS_ORIGIN||false,credentials:Boolean(process.env.CORS_ORIGIN)}));
 app.use(express.json({limit:'10mb'}));
 const uploadDir=path.join(__dirname,'..','uploads');fs.mkdirSync(uploadDir,{recursive:true});
 const storage=multer.diskStorage({destination:uploadDir,filename:(req,file,cb)=>{const ext=path.extname(file.originalname||'').toLowerCase().replace(/[^.a-z0-9]/g,'');cb(null,`${Date.now()}-${Math.random().toString(36).slice(2,9)}${ext}`)}});
-const upload=multer({storage,limits:{fileSize:1024*1024*1024}});
+const upload=multer({storage,limits:{fileSize:250*1024*1024}});
 app.use('/uploads',express.static(uploadDir));
 app.use('/assets',express.static(path.join(__dirname,'..','public')));
 app.get('/studio',(req,res)=>res.sendFile(path.join(__dirname,'..','studio','index.html')));
 app.get('/control-room',(req,res)=>res.sendFile(path.join(__dirname,'..','studio','index.html')));
 app.get('/robots.txt',(req,res)=>res.type('text/plain').send('User-agent: *\nDisallow: /studio\nDisallow: /control-room\n'));
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'Essence Network API',version:'6.0.0',time:new Date().toISOString()}));
-app.post('/api/auth/login',(req,res)=>{const email=String(req.body?.email||'').trim().toLowerCase();const password=String(req.body?.password||'');if(!email||!password)return res.status(400).json({error:'Email and password are required'});const u=db.prepare('SELECT * FROM users WHERE email=?').get(email);if(!u||hashPassword(password)!==u.password_hash)return res.status(401).json({error:'Invalid email or password'});res.json({token:sign(u),user:{id:u.id,email:u.email,role:u.role}})});
+const loginAttempts=new Map();
+function loginGuard(email){const now=Date.now(),x=loginAttempts.get(email);if(!x||now-x.started>15*60*1000){loginAttempts.set(email,{started:now,count:1});return true}x.count++;return x.count<=10}
+app.post('/api/auth/login',(req,res)=>{const email=String(req.body?.email||'').trim().toLowerCase();const password=String(req.body?.password||'');if(!email||!password)return res.status(400).json({error:'Email and password are required'});if(!loginGuard(email))return res.status(429).json({error:'Too many login attempts. Please try again later.'});const u=db.prepare('SELECT * FROM users WHERE email=?').get(email);if(!u||!verifyPassword(password,u.password_hash))return res.status(401).json({error:'Invalid email or password'});loginAttempts.delete(email);if(needsRehash(u.password_hash))db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(password),u.id);res.json({token:sign(u),user:{id:u.id,email:u.email,role:u.role}})});
 app.get('/api/auth/me',requireAuth,(req,res)=>{const u=db.prepare('SELECT id,email,role,created_at FROM users WHERE id=?').get(req.user.id);if(!u)return res.status(401).json({error:'User not found'});res.json({user:u})});
 function isoNow(){return new Date().toISOString()}
 function getOnAir(channelId, nowIso=isoNow()){
@@ -104,7 +106,7 @@ app.post('/api/workspace/broadcast/:channelId/stop-override',workspaceRole(['adm
 });
 app.get('/api/workspace/broadcast/:channelId/preview',(req,res)=>{const x=getOnAir(Number(req.params.channelId));if(!x)return res.status(404).json({error:'Channel not found'});res.json(x)});
 app.get('/api/admin/export',(req,res)=>{const payload={version:'5.1.0',exportedAt:new Date().toISOString(),channels:db.prepare('SELECT * FROM channels').all(),programmes:db.prepare('SELECT * FROM programmes').all(),videos:db.prepare('SELECT * FROM videos').all(),news:db.prepare('SELECT * FROM news').all(),users:db.prepare('SELECT id,email,role,created_at FROM users').all(),broadcast_state:db.prepare('SELECT * FROM broadcast_state').all(),settings:db.prepare('SELECT * FROM settings').all()};res.setHeader('Content-Disposition','attachment; filename="essence-network-v5-backup.json"');res.json(payload)});
-app.put('/api/admin/account/password',(req,res)=>{const current=String(req.body?.currentPassword||''),next=String(req.body?.newPassword||'');if(next.length<8)return res.status(400).json({error:'New password must be at least 8 characters'});const u=db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);if(!u||hashPassword(current)!==u.password_hash)return res.status(401).json({error:'Current password is incorrect'});db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(next),u.id);res.json({ok:true})});
+app.put('/api/admin/account/password',(req,res)=>{const current=String(req.body?.currentPassword||''),next=String(req.body?.newPassword||'');if(next.length<8)return res.status(400).json({error:'New password must be at least 8 characters'});const u=db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);if(!u||!verifyPassword(current,u.password_hash))return res.status(401).json({error:'Current password is incorrect'});db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(next),u.id);res.json({ok:true})});
 app.get('/api/admin/settings',(req,res)=>res.json(db.prepare('SELECT key,value FROM settings ORDER BY key').all()));
 app.put('/api/admin/settings',(req,res)=>{const values=req.body?.values&&typeof req.body.values==='object'?req.body.values:{};const stmt=db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');const tx=db.transaction(o=>{for(const[k,v]of Object.entries(o))if(/^[a-zA-Z0-9_.-]{1,80}$/.test(k))stmt.run(k,String(v))});tx(values);res.json({ok:true})});
 
