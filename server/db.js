@@ -1,6 +1,31 @@
-const fs = require("fs");
-const path = require("path");
-
-const DATA_DIR = path.join(__dirname, "../data");
-
+const Database = require('better-sqlite3');
+const fs = require('fs');
+const path = require('path');
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const DB_PATH = path.join(DATA_DIR, 'essence.db');
 fs.mkdirSync(DATA_DIR, { recursive: true });
+const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'editor',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,description TEXT DEFAULT '',stream_url TEXT NOT NULL,logo_url TEXT DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS programmes (id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id INTEGER,start_time TEXT NOT NULL,end_time TEXT NOT NULL,title TEXT NOT NULL,description TEXT DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,description TEXT DEFAULT '',video_url TEXT NOT NULL,thumbnail_url TEXT DEFAULT '',published INTEGER NOT NULL DEFAULT 0,editorial_status TEXT NOT NULL DEFAULT 'draft',created_by INTEGER,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL);
+CREATE TABLE IF NOT EXISTS news (id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT NOT NULL,headline TEXT NOT NULL,summary TEXT DEFAULT '',image_url TEXT DEFAULT '',published INTEGER NOT NULL DEFAULT 0,editorial_status TEXT NOT NULL DEFAULT 'draft',created_by INTEGER,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS broadcast_state (channel_id INTEGER PRIMARY KEY,current_programme_id INTEGER,next_programme_id INTEGER,status TEXT NOT NULL DEFAULT 'offline',updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE,FOREIGN KEY(current_programme_id) REFERENCES programmes(id) ON DELETE SET NULL,FOREIGN KEY(next_programme_id) REFERENCES programmes(id) ON DELETE SET NULL);
+`);
+function addColumn(sql) { try { db.exec(sql); } catch (e) { if (!/duplicate column name/i.test(String(e.message))) throw e; } }
+addColumn("ALTER TABLE videos ADD COLUMN editorial_status TEXT NOT NULL DEFAULT 'draft'");
+addColumn("ALTER TABLE videos ADD COLUMN created_by INTEGER");
+addColumn("ALTER TABLE videos ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+addColumn("ALTER TABLE news ADD COLUMN editorial_status TEXT NOT NULL DEFAULT 'draft'");
+addColumn("ALTER TABLE news ADD COLUMN created_by INTEGER");
+addColumn("ALTER TABLE news ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+db.exec("UPDATE videos SET editorial_status=CASE WHEN published=1 THEN 'published' ELSE 'draft' END WHERE editorial_status IS NULL OR editorial_status='draft'");
+db.exec("UPDATE videos SET updated_at=CURRENT_TIMESTAMP WHERE updated_at='' OR updated_at IS NULL");
+db.exec("UPDATE news SET editorial_status=CASE WHEN published=1 THEN 'published' ELSE 'draft' END WHERE editorial_status IS NULL OR editorial_status='draft'");
+db.exec("UPDATE news SET updated_at=CURRENT_TIMESTAMP WHERE updated_at='' OR updated_at IS NULL");
+if (typeof db.prepare !== 'function') throw new TypeError('Database initialization failed: db.prepare() is unavailable.');
+module.exports = db;
