@@ -1,0 +1,23 @@
+{
+  "name": "essence-network-v5-production",
+  "version": "6.2.0",
+  "private": true,
+  "description": "Essence Network V6 production studio, broadcast automation and public OTT-style web experience.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "init-admin": "node server/init-admin.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "engines": {
+    "node": ">=22 <27"
+  }
+}
