@@ -21,7 +21,7 @@ app.use('/assets',express.static(path.join(__dirname,'..','public')));
 app.get('/studio',(req,res)=>res.sendFile(path.join(__dirname,'..','studio','index.html')));
 app.get('/control-room',(req,res)=>res.sendFile(path.join(__dirname,'..','studio','index.html')));
 app.get('/robots.txt',(req,res)=>res.type('text/plain').send('User-agent: *\nDisallow: /studio\nDisallow: /control-room\n'));
-app.get('/api/health',(req,res)=>res.json({ok:true,service:'Essence Network API',version:'6.2.0',time:new Date().toISOString()}));
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'Essence Network API',version:'6.2.1',time:new Date().toISOString()}));
 const loginAttempts=new Map();
 function loginGuard(email){const now=Date.now(),x=loginAttempts.get(email);if(!x||now-x.started>15*60*1000){loginAttempts.set(email,{started:now,count:1});return true}x.count++;return x.count<=10}
 app.post('/api/auth/login',(req,res)=>{const email=String(req.body?.email||'').trim().toLowerCase();const password=String(req.body?.password||'');if(!email||!password)return res.status(400).json({error:'Email and password are required'});if(!loginGuard(email))return res.status(429).json({error:'Too many login attempts. Please try again later.'});const u=db.prepare('SELECT * FROM users WHERE email=?').get(email);if(!u||!verifyPassword(password,u.password_hash))return res.status(401).json({error:'Invalid email or password'});loginAttempts.delete(email);if(needsRehash(u.password_hash))db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(password),u.id);res.json({token:sign(u),user:{id:u.id,email:u.email,role:u.role}})});
