@@ -1,8 +1,8 @@
 {
   "name": "essence-network-v5-production",
-  "version": "6.0.2",
+  "version": "6.2.0",
   "private": true,
-  "description": "Essence Network V6 TV production and web broadcast automation platform.",
+  "description": "Essence Network V6 production studio, broadcast automation and public OTT-style web experience.",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
