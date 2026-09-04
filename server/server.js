@@ -21,14 +21,30 @@ app.use('/assets',express.static(path.join(__dirname,'..','public')));
 app.get('/studio',(req,res)=>res.sendFile(path.join(__dirname,'..','studio','index.html')));
 app.get('/control-room',(req,res)=>res.sendFile(path.join(__dirname,'..','studio','index.html')));
 app.get('/robots.txt',(req,res)=>res.type('text/plain').send('User-agent: *\nDisallow: /studio\nDisallow: /control-room\n'));
-app.get('/api/health',(req,res)=>res.json({ok:true,service:'Essence Network API',version:'5.1.0',time:new Date().toISOString()}));
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'Essence Network API',version:'6.0.0',time:new Date().toISOString()}));
 app.post('/api/auth/login',(req,res)=>{const email=String(req.body?.email||'').trim().toLowerCase();const password=String(req.body?.password||'');if(!email||!password)return res.status(400).json({error:'Email and password are required'});const u=db.prepare('SELECT * FROM users WHERE email=?').get(email);if(!u||hashPassword(password)!==u.password_hash)return res.status(401).json({error:'Invalid email or password'});res.json({token:sign(u),user:{id:u.id,email:u.email,role:u.role}})});
 app.get('/api/auth/me',requireAuth,(req,res)=>{const u=db.prepare('SELECT id,email,role,created_at FROM users WHERE id=?').get(req.user.id);if(!u)return res.status(401).json({error:'User not found'});res.json({user:u})});
+function isoNow(){return new Date().toISOString()}
+function getOnAir(channelId, nowIso=isoNow()){
+  const c=db.prepare('SELECT id,name,description,stream_url AS stream,logo_url AS logo,enabled,sort_order FROM channels WHERE id=? AND enabled=1').get(channelId);
+  if(!c) return null;
+  const ov=db.prepare(`SELECT o.*,b.title item_title FROM broadcast_override o LEFT JOIN broadcast_items b ON b.id=o.item_id WHERE o.channel_id=? AND o.active=1`).get(channelId);
+  if(ov){return {channel:c,mode:'override',item_id:ov.item_id,title:ov.title,source_type:ov.source_type,source_url:ov.source_url,started_at:ov.started_at,end_at:null}}
+  const item=db.prepare(`SELECT * FROM broadcast_items WHERE channel_id=? AND enabled=1 AND start_at<=? AND end_at>? ORDER BY start_at DESC,id DESC LIMIT 1`).get(channelId,nowIso,nowIso);
+  if(item){return {channel:c,mode:'scheduled',item_id:item.id,title:item.title,source_type:item.source_type,source_url:item.source_url,started_at:item.start_at,end_at:item.end_at}}
+  return {channel:c,mode:'fallback',item_id:null,title:c.name+' • Live',source_type:'live',source_url:c.stream,started_at:nowIso,end_at:null};
+}
+app.get('/api/public/on-air',(req,res)=>{
+  const now=isoNow();
+  const channels=db.prepare('SELECT id FROM channels WHERE enabled=1 ORDER BY sort_order,id').all();
+  res.json({server_time:now,channels:channels.map(x=>getOnAir(x.id,now)).filter(Boolean)});
+});
 app.get('/api/public',(req,res)=>{const channels=db.prepare('SELECT id,name,description,stream_url AS stream,logo_url AS logo,enabled,sort_order FROM channels WHERE enabled=1 ORDER BY sort_order,id').all();const programmes=db.prepare('SELECT p.*,c.name channel_name FROM programmes p LEFT JOIN channels c ON c.id=p.channel_id ORDER BY p.start_time').all();const videos=db.prepare("SELECT * FROM videos WHERE published=1 AND editorial_status='published' ORDER BY id DESC").all();const news=db.prepare("SELECT * FROM news WHERE published=1 AND editorial_status='published' ORDER BY id DESC").all();const settings=Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map(x=>[x.key,x.value]));res.json({channels,programmes,videos,news,settings})});
 const authz=(roles)=>[requireAuth,(req,res,next)=>{if(!roles.includes(req.user?.role))return res.status(403).json({error:'Access denied for this workspace'});next()}];
 app.use('/api/workspace',...authz(['admin','editor','producer','operator']));
 app.use('/api/admin',...authz(['admin']));
 const clean=v=>String(v??'').trim();
+const workspaceRole=(roles)=>(req,res,next)=>{if(!roles.includes(req.user?.role))return res.status(403).json({error:'Role not permitted for this operation'});next()};
 function validateVideo(b){if(!clean(b.title)||!clean(b.video_url))return 'Title and video URL are required';if(!/^https?:\/\//i.test(clean(b.video_url))&&!/^\/uploads\//.test(clean(b.video_url)))return 'Video URL must be http(s) or /uploads/';return null}
 function validateNews(b){if(!clean(b.category)||!clean(b.headline))return 'Category and headline are required';return null}
 function validateChannel(b){if(!clean(b.name)||!clean(b.stream_url))return 'Channel name and stream URL are required';if(!/^https?:\/\//i.test(clean(b.stream_url)))return 'Stream URL must start with http:// or https://';return null}
@@ -55,13 +71,45 @@ app.post('/api/workspace/upload',upload.single('file'),(req,res)=>{if(!req.file)
 app.get('/api/admin/users',(req,res)=>res.json(db.prepare('SELECT id,email,role,created_at FROM users ORDER BY id').all()));
 app.post('/api/admin/users',(req,res)=>{const email=clean(req.body?.email).toLowerCase(),password=String(req.body?.password||''),role=clean(req.body?.role)||'editor';if(!email||password.length<8)return res.status(400).json({error:'Email and password (8+ characters) are required'});if(!['admin','editor','producer','operator'].includes(role))return res.status(400).json({error:'Invalid role'});try{const x=db.prepare('INSERT INTO users(email,password_hash,role) VALUES(?,?,?)').run(email,hashPassword(password),role);res.status(201).json(db.prepare('SELECT id,email,role,created_at FROM users WHERE id=?').get(x.lastInsertRowid))}catch(e){res.status(409).json({error:'That email already exists'})}});
 app.delete('/api/admin/users/:id',(req,res)=>{if(Number(req.params.id)===Number(req.user.id))return res.status(400).json({error:'You cannot delete your own account'});const x=db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);if(!x.changes)return res.status(404).json({error:'User not found'});res.json({ok:true})});
+app.get('/api/workspace/broadcast-automation',(req,res)=>{
+  const channels=db.prepare('SELECT * FROM channels ORDER BY sort_order,id').all();
+  const items=db.prepare(`SELECT b.*,c.name channel_name,v.title video_title FROM broadcast_items b JOIN channels c ON c.id=b.channel_id LEFT JOIN videos v ON v.video_url=b.source_url ORDER BY b.channel_id,b.start_at,b.id`).all();
+  const overrides=db.prepare(`SELECT o.*,c.name channel_name FROM broadcast_override o JOIN channels c ON c.id=o.channel_id WHERE o.active=1`).all();
+  res.json({server_time:isoNow(),channels,items,overrides});
+});
+app.post('/api/workspace/broadcast-items',workspaceRole(['admin','producer','operator']), (req,res)=>{
+  const b=req.body||{}, channelId=Number(b.channel_id), title=clean(b.title), url=clean(b.source_url), type=['video','live','url'].includes(b.source_type)?b.source_type:'video';
+  if(!db.prepare('SELECT id FROM channels WHERE id=?').get(channelId)) return res.status(400).json({error:'Channel not found'});
+  if(!title||!url||!clean(b.start_at)||!clean(b.end_at)) return res.status(400).json({error:'Channel, title, source URL, start and end are required'});
+  if(new Date(b.end_at)<=new Date(b.start_at)) return res.status(400).json({error:'End time must be after start time'});
+  const x=db.prepare('INSERT INTO broadcast_items(channel_id,title,source_type,source_url,start_at,end_at,enabled,created_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(channelId,title,type,url,clean(b.start_at),clean(b.end_at),b.enabled===undefined?1:Number(b.enabled),req.user.id,isoNow());
+  res.status(201).json(db.prepare('SELECT * FROM broadcast_items WHERE id=?').get(x.lastInsertRowid));
+});
+app.put('/api/workspace/broadcast-items/:id',workspaceRole(['admin','producer','operator']), (req,res)=>{
+  const old=db.prepare('SELECT * FROM broadcast_items WHERE id=?').get(req.params.id); if(!old)return res.status(404).json({error:'Broadcast item not found'});
+  const b={...old,...(req.body||{})}; if(new Date(b.end_at)<=new Date(b.start_at))return res.status(400).json({error:'End time must be after start time'});
+  db.prepare('UPDATE broadcast_items SET channel_id=?,title=?,source_type=?,source_url=?,start_at=?,end_at=?,enabled=?,updated_at=? WHERE id=?').run(Number(b.channel_id),clean(b.title),['video','live','url'].includes(b.source_type)?b.source_type:'video',clean(b.source_url),clean(b.start_at),clean(b.end_at),Number(b.enabled)!==0,isoNow(),req.params.id);
+  res.json(db.prepare('SELECT * FROM broadcast_items WHERE id=?').get(req.params.id));
+});
+app.delete('/api/workspace/broadcast-items/:id',workspaceRole(['admin','producer','operator']), (req,res)=>{const x=db.prepare('DELETE FROM broadcast_items WHERE id=?').run(req.params.id);if(!x.changes)return res.status(404).json({error:'Broadcast item not found'});res.json({ok:true})});
+app.post('/api/workspace/broadcast-items/:id/take',workspaceRole(['admin','producer','operator']), (req,res)=>{
+  const item=db.prepare('SELECT b.*,c.name channel_name FROM broadcast_items b JOIN channels c ON c.id=b.channel_id WHERE b.id=?').get(req.params.id); if(!item)return res.status(404).json({error:'Broadcast item not found'});
+  db.prepare(`INSERT INTO broadcast_override(channel_id,item_id,title,source_type,source_url,started_at,active,created_by,updated_at) VALUES(?,?,?,?,?,?,1,?,?) ON CONFLICT(channel_id) DO UPDATE SET item_id=excluded.item_id,title=excluded.title,source_type=excluded.source_type,source_url=excluded.source_url,started_at=excluded.started_at,active=1,created_by=excluded.created_by,updated_at=excluded.updated_at`).run(item.channel_id,item.id,item.title,item.source_type,item.source_url,isoNow(),req.user.id,isoNow());
+  db.prepare('UPDATE broadcast_state SET status=?,updated_at=? WHERE channel_id=?').run('live',isoNow(),item.channel_id);
+  db.prepare('INSERT INTO control_events(channel_id,event_type,title,details,created_by) VALUES(?,?,?,?,?)').run(item.channel_id,'take-to-air','TAKE TO AIR',item.title,req.user.id);
+  res.json(getOnAir(item.channel_id));
+});
+app.post('/api/workspace/broadcast/:channelId/stop-override',workspaceRole(['admin','producer','operator']), (req,res)=>{
+  const id=Number(req.params.channelId); db.prepare('UPDATE broadcast_override SET active=0,updated_at=? WHERE channel_id=?').run(isoNow(),id); db.prepare('INSERT INTO control_events(channel_id,event_type,title,details,created_by) VALUES(?,?,?,?,?)').run(id,'return-to-automation','RETURN TO AUTOMATION','Scheduled playout resumed',req.user.id); res.json(getOnAir(id));
+});
+app.get('/api/workspace/broadcast/:channelId/preview',(req,res)=>{const x=getOnAir(Number(req.params.channelId));if(!x)return res.status(404).json({error:'Channel not found'});res.json(x)});
 app.get('/api/admin/export',(req,res)=>{const payload={version:'5.1.0',exportedAt:new Date().toISOString(),channels:db.prepare('SELECT * FROM channels').all(),programmes:db.prepare('SELECT * FROM programmes').all(),videos:db.prepare('SELECT * FROM videos').all(),news:db.prepare('SELECT * FROM news').all(),users:db.prepare('SELECT id,email,role,created_at FROM users').all(),broadcast_state:db.prepare('SELECT * FROM broadcast_state').all(),settings:db.prepare('SELECT * FROM settings').all()};res.setHeader('Content-Disposition','attachment; filename="essence-network-v5-backup.json"');res.json(payload)});
 app.put('/api/admin/account/password',(req,res)=>{const current=String(req.body?.currentPassword||''),next=String(req.body?.newPassword||'');if(next.length<8)return res.status(400).json({error:'New password must be at least 8 characters'});const u=db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);if(!u||hashPassword(current)!==u.password_hash)return res.status(401).json({error:'Current password is incorrect'});db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(next),u.id);res.json({ok:true})});
 app.get('/api/admin/settings',(req,res)=>res.json(db.prepare('SELECT key,value FROM settings ORDER BY key').all()));
 app.put('/api/admin/settings',(req,res)=>{const values=req.body?.values&&typeof req.body.values==='object'?req.body.values:{};const stmt=db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');const tx=db.transaction(o=>{for(const[k,v]of Object.entries(o))if(/^[a-zA-Z0-9_.-]{1,80}$/.test(k))stmt.run(k,String(v))});tx(values);res.json({ok:true})});
 
 // V5 production, newsroom and broadcast operations
-const workspaceRole=(roles)=>(req,res,next)=>{if(!roles.includes(req.user?.role))return res.status(403).json({error:'Role not permitted for this operation'});next()};
+
 app.get('/api/workspace/sources',(req,res)=>res.json(db.prepare(`SELECT s.*,c.name channel_name FROM production_sources s LEFT JOIN channels c ON c.id=s.channel_id ORDER BY s.position,s.id`).all()));
 app.post('/api/workspace/sources',workspaceRole(['admin','producer','operator']), (req,res)=>{const b=req.body||{};if(!clean(b.name))return res.status(400).json({error:'Source name is required'});const x=db.prepare('INSERT INTO production_sources(name,type,url,status,channel_id,position,notes,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(clean(b.name),clean(b.type)||'camera',clean(b.url),clean(b.status)||'offline',b.channel_id?Number(b.channel_id):null,Number(b.position)||0,clean(b.notes),new Date().toISOString());res.status(201).json(db.prepare('SELECT * FROM production_sources WHERE id=?').get(x.lastInsertRowid))});
 app.put('/api/workspace/sources/:id',workspaceRole(['admin','producer','operator']), (req,res)=>{const old=db.prepare('SELECT * FROM production_sources WHERE id=?').get(req.params.id);if(!old)return res.status(404).json({error:'Source not found'});const b={...old,...(req.body||{})};db.prepare('UPDATE production_sources SET name=?,type=?,url=?,status=?,channel_id=?,position=?,notes=?,updated_at=? WHERE id=?').run(clean(b.name),clean(b.type)||'camera',clean(b.url),clean(b.status)||'offline',b.channel_id?Number(b.channel_id):null,Number(b.position)||0,clean(b.notes),new Date().toISOString(),req.params.id);res.json(db.prepare('SELECT * FROM production_sources WHERE id=?').get(req.params.id))});

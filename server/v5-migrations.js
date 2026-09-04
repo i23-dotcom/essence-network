@@ -12,3 +12,34 @@ const statements=[
 `CREATE TABLE IF NOT EXISTS audio_channels (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'mic',source_url TEXT DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,mute INTEGER NOT NULL DEFAULT 0,gain REAL NOT NULL DEFAULT 0,pan REAL NOT NULL DEFAULT 0,notes TEXT DEFAULT '',updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS comms_messages (id INTEGER PRIMARY KEY AUTOINCREMENT,from_user INTEGER,to_crew INTEGER,message TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'normal',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(from_user) REFERENCES users(id) ON DELETE SET NULL,FOREIGN KEY(to_crew) REFERENCES crew(id) ON DELETE SET NULL)`,
 `CREATE TABLE IF NOT EXISTS broadcast_alerts (id INTEGER PRIMARY KEY AUTOINCREMENT,channel_id INTEGER,title TEXT NOT NULL,message TEXT NOT NULL,level TEXT NOT NULL DEFAULT 'info',active INTEGER NOT NULL DEFAULT 1,created_by INTEGER,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE,FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL)`]; for(const s of statements) db.exec(s);
+
+// V6 broadcast automation: deterministic, server-clocked channel playout.
+db.exec(`CREATE TABLE IF NOT EXISTS broadcast_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'video',
+  source_url TEXT NOT NULL,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS broadcast_override (
+  channel_id INTEGER PRIMARY KEY,
+  item_id INTEGER,
+  title TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'live',
+  source_url TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE,
+  FOREIGN KEY(item_id) REFERENCES broadcast_items(id) ON DELETE SET NULL,
+  FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+)`);
